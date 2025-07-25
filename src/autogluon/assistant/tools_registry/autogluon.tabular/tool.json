@@ -8,7 +8,7 @@
   "prompt_template": [
     "time_limit: 1800 (seconds)",
     "presets: medium_quality",
-    "tuning_data: only use validation if there is a validation dataset.",
+    "Pass the validation split to the tuning_data parameter in the fit() method.",
     "AutoGluon Tabular requires converting multiple label columns into either a single combined label for mutually exclusive cases or training separate predictors for each label in non-exclusive scenarios."
   ]
 }

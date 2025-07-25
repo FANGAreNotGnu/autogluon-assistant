@@ -36,7 +36,8 @@ Please optimize your code to efficiently utilize the available hardware resource
    - Output column names must exactly match those in the training or sample submission files without adding "predicted_" prefixes or creating any new columns.
 
 4. Validation:
-   - Hold out a validation dataset at the start, train only on the remaining data, and at the end compute and print the final evaluation metric score on the validation set.
+   - If no validation data is given, hold out a validation dataset (10 percent of the data) at the start , train only on the remaining data.
+   - At the end compute and print the final evaluation metric score on the validation set.
    - Use a try-except block for the validation step - if validation fails, it's acceptable to continue.
 
 5. Documentation:
