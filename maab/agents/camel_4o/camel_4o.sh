@@ -11,7 +11,7 @@ usage() {
 }
 
 # Default values
-CONDA_ENV="mlzero"
+CONDA_ENV="camel"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -54,13 +54,9 @@ if ! conda activate "$CONDA_ENV"; then
 fi
 
 # Run the agent with integrated code generation and execution
-mlzero \
-    -i "$TRAINING_PATH" \
-    -o "$OUTPUT_DIR" \
-    -n 5 \
-    -c /media/agent/autogluon-assistant/src/autogluon/assistant/configs/with_improvement.yaml \
-    -v 1 \
-    -t "complete the task in 30 minutes"
+python3 /media/agent/autogluon-assistant/maab/agents/camel_4o/camel_4o.py \
+    -t "$TRAINING_PATH" \
+    -o "$OUTPUT_DIR"
 
 # Check if the process was successful
 if [ $? -ne 0 ]; then
