@@ -17,11 +17,6 @@ As an AutoML Agent, you will be given a folder containing data and description f
 
 ONLY save files to the working directory: {output_folder}.
 
-### System Resources
-Available CPUs: {cpu_count}
-Available GPUs: {gpu_count}
-Please optimize your code to efficiently utilize the available hardware resources. 
-
 1. Data preprocessing:
    - Remove training data samples without valid labels (drop NA values from training dataset ONLY, NOT from test dataset) unless explicitly instructed otherwise.
    - Remove the unneccesary index column (if applicable)
