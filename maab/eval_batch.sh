@@ -98,7 +98,10 @@ run_agent() {
         return 1
     fi
     
-    # Run evaluation
+    # Make sure the results directory exists
+    mkdir -p "$(dirname "$RESULTS_FILE")"
+
+    # Run evaluation - evaluator now handles file locking internally
     python3 "${MAAB_DIR}/tools/evaluators.py" \
         --pred_path "$pred_path" \
         --gt_path "$gt_path" \

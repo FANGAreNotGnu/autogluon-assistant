@@ -48,14 +48,18 @@ fi
 
 # Process agents list
 if [ "$AGENTS" = "all" ]; then
-    IFS=$'\n' read -d '' -ra AGENT_LIST < <(get_all_agents)
+    echo "Getting all agents..."
+    AGENT_LIST=($(get_all_agents))
+    echo "Found ${#AGENT_LIST[@]} agents"
 else
     IFS=',' read -ra AGENT_LIST <<< "$AGENTS"
 fi
 
 # Process datasets list
 if [ "$DATASETS" = "all" ]; then
-    IFS=$'\n' read -d '' -ra DATASET_LIST < <(get_all_datasets)
+    echo "Getting all datasets..."
+    DATASET_LIST=($(get_all_datasets))
+    echo "Found ${#DATASET_LIST[@]} datasets"
 elif [ "$DATASETS" = "ablation" ]; then
     IFS=',' read -ra DATASET_LIST <<< "$(get_ablation_datasets)"
     echo "Using ablation dataset set: ${DATASETS}"
@@ -68,7 +72,7 @@ mkdir -p "/fsx/mlzero-dev/autogluon-assistant/maab/runs/RUN_${RUN_TIMESTAMP}/out
 RESULTS_FILE="/fsx/mlzero-dev/autogluon-assistant/maab/runs/RUN_${RUN_TIMESTAMP}/overall_results.csv"
 
 # Create header for results file
-echo "agent,metric,value" > "$RESULTS_FILE"
+echo "agent_name,dataset_name,problem_type,metric_name,metric_value" > "$RESULTS_FILE"
 
 # Validate agents and datasets
 echo "Validating agents and datasets..."
@@ -99,18 +103,23 @@ for agent in "${AGENT_LIST[@]}"; do
         JOB_NAME="${agent}_${dataset}_${RUN_TIMESTAMP}"
         echo "Submitting job: $JOB_NAME"
 
-        # Submit the job
-        aws batch submit-job \
+        # Submit the job and capture the response
+        JOB_RESPONSE=$(aws batch submit-job \
           --region "$REGION" \
           --job-name "$JOB_NAME" \
           --job-queue "$JOB_QUEUE" \
-          --job-definition "$JOB_DEFINITION"
+          --job-definition "$JOB_DEFINITION" \
+          --container-overrides "environment=[{name=AGENT_NAME,value=$agent},{name=DATASET_NAME,value=$dataset},{name=RUN_TIMESTAMP,value=$RUN_TIMESTAMP}]" \
+          2>&1)
 
         if [ $? -eq 0 ]; then
-            echo "Job submitted: $JOB_NAME"
-            echo "$job_id,$agent,$dataset,SUBMITTED,$(date +%Y-%m-%d-%H:%M:%S)" >> "$JOB_TRACKING_FILE"
+            # Extract job ID from response
+            JOB_ID=$(echo "$JOB_RESPONSE" | jq -r '.jobId' 2>/dev/null || echo "UNKNOWN")
+            echo "Job submitted: $JOB_NAME (ID: $JOB_ID)"
+            echo "$JOB_ID,$agent,$dataset,SUBMITTED,$(date +%Y-%m-%d-%H:%M:%S)" >> "$JOB_TRACKING_FILE"
         else
             echo "Failed to submit job: $JOB_NAME"
+            echo "$JOB_RESPONSE"
             echo "FAILED,$agent,$dataset,SUBMISSION_FAILED,$(date +%Y-%m-%d-%H:%M:%S)" >> "$JOB_TRACKING_FILE"
         fi
         

@@ -59,6 +59,10 @@ Example:
 eval_batch.sh -a mlzero_default -d abalone
 ```
 
+### Evaluation with AWS Batch
+
+(TBA)
+
 ### Default Agent for MLZero
 
 - mlzero_default
