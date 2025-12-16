@@ -38,6 +38,12 @@ class BaseRetrievalEvaluator(BaseEvaluator):
         doc_col = metadata["corpus_column"]
         score_col = metadata["label_column"]
 
+        # Ensure consistent string types for IDs
+        pred_df[query_col] = pred_df[query_col].astype(str)
+        pred_df[doc_col] = pred_df[doc_col].astype(str)
+        gt_df[query_col] = gt_df[query_col].astype(str)
+        gt_df[doc_col] = gt_df[doc_col].astype(str)
+
         all_preds = []
         all_labels = []
         all_scores = []

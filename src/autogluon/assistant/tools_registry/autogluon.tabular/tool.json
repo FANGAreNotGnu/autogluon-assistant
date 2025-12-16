@@ -5,6 +5,7 @@
   "requirements": [],
   "prompt_template": [
     "try to use presets=\"extreme\"",
+    "Do not manually split a validation set from the training data - AutoGluon Tabular automatically handles internal validation and reports validation scores, so simply pass the full training data to the fit() method.",
     "AutoGluon Tabular requires converting multiple label columns into either a single combined label for mutually exclusive cases or training separate predictors for each label in non-exclusive scenarios."
   ]
 }
