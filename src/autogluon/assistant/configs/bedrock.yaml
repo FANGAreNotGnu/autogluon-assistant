@@ -47,12 +47,9 @@ llm: &default_llm
 
 python_coder:
   <<: *default_llm  # Merge llm_config
-  multi_turn: True
-  apply_meta_prompting: True
 
 bash_coder:
   <<: *default_llm  # Merge llm_config
-  multi_turn: True
 
 executer:
   <<: *default_llm  # Merge llm_config
@@ -85,7 +82,7 @@ task_descriptor:
   <<: *default_llm  # Merge llm_config
   max_description_files_length_to_show: 1024
   max_description_files_length_for_summarization: 16384
-  apply_meta_prompting: True
+  apply_meta_prompting: False
 
 tool_selector:
   <<: *default_llm  # Merge llm_config

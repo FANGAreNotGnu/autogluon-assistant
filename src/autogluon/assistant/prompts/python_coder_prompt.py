@@ -42,10 +42,10 @@ ONLY save files to the working directory: {per_iteration_output_folder}.
    - If a model is trained, save it in a folder with random timestamp within {per_iteration_output_folder}
 
 3. Prediction:
-   - Make predictions on the test data. Always preserve and use the ORIGINAL INDICES from the test data to maintain exact row correspondence - DO NOT generate new indices or rely on assumed ordering.
+   - Make predictions on the ENTIRE test set, preserving ORIGINAL INDICES to maintain exact row correspondence. NEVER drop any test rows for any reason (including missing values), and ensure the output has the exact same number of rows as the test set.
    - Save the predicted results to {per_iteration_output_folder}, result file name should be "results", the format and extension should be same as the test data file
    - Output column names must exactly match those in the training or sample submission files without adding "predicted_" prefixes or creating any new columns.
-   - IMPORTANT: At the end, implement validation checks that assert the prediction file maintains exact test data indices, verify correct column names match requirements, confirm proper output format, and if applicable, sanity check output predictions are valid and correct.
+   - IMPORTANT: At the end, implement validation checks that assert the prediction file maintains exact test data indices, verify correct column names match requirements, confirm proper output format, verify the number of predictions equals the number of test samples, and if applicable, sanity check output predictions are valid and correct.
 
 4. Documentation:
    - Add a brief docstring at the beginning of the script explaining its purpose
