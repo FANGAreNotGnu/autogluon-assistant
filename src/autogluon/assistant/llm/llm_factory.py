@@ -8,6 +8,7 @@ from .anthropic_chat import AssistantChatAnthropic, create_anthropic_chat, get_a
 from .azure_openai_chat import AssistantAzureChatOpenAI, create_azure_openai_chat, get_azure_models
 from .base_chat import GlobalTokenTracker
 from .bedrock_chat import AssistantChatBedrock, create_bedrock_chat, get_bedrock_models
+from .claude_code_agent import ClaudeCodeAgent, create_claude_code_agent, get_claude_code_models
 from .openai_chat import AssistantChatOpenAI, create_openai_chat, get_openai_models
 from .sagemaker_chat import SagemakerEndpointChat, create_sagemaker_chat, get_sagemaker_endpoints
 
@@ -23,7 +24,7 @@ class ChatLLMFactory:
         return GlobalTokenTracker().get_total_usage(save_path)
 
     @classmethod
-    def get_valid_models(cls, provider):
+    def get_valid_models(cls, provider, backend=None):
         if provider == "azure":
             return get_azure_models()
         elif provider == "openai":
@@ -34,12 +35,15 @@ class ChatLLMFactory:
             return get_anthropic_models()
         elif provider == "sagemaker":
             return get_sagemaker_endpoints()
+        elif provider == "claude-code":
+            # Claude Code supports all Claude models
+            return get_claude_code_models()
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
     @classmethod
     def get_valid_providers(cls):
-        return ["azure", "openai", "bedrock", "anthropic", "sagemaker"]
+        return ["azure", "openai", "bedrock", "anthropic", "sagemaker", "claude-code"]
 
     @classmethod
     def get_chat_model(cls, config: DictConfig, session_name: str) -> Union[
@@ -48,6 +52,7 @@ class ChatLLMFactory:
         AssistantChatBedrock,
         AssistantChatAnthropic,
         SagemakerEndpointChat,
+        ClaudeCodeAgent,
     ]:
         """Get a configured chat model instance using LangGraph patterns."""
         provider = config.provider
@@ -57,13 +62,16 @@ class ChatLLMFactory:
         if provider not in valid_providers:
             raise ValueError(f"Invalid provider: {provider}. Must be one of {valid_providers}")
 
-        if provider != "sagemaker":
+        if provider not in ["sagemaker", "claude-code"]:
             valid_models = cls.get_valid_models(provider)
             if model not in valid_models:
                 if model[3:] not in valid_models:  # TODO: better logic for cross region inference
                     raise ValueError(
                         f"Invalid model: {model} for provider {provider}. All valid models are {valid_models}. If you are using Bedrock, please check if the requested model is available in the provided AWS_DEFAULT_REGION: {os.environ.get('AWS_DEFAULT_REGION')}"
                     )
+        elif provider == "claude-code":
+            # Claude Code supports all Claude models - skip validation
+            pass
 
         if provider == "openai":
             return create_openai_chat(config, session_name)
@@ -75,5 +83,7 @@ class ChatLLMFactory:
             return create_bedrock_chat(config, session_name)
         elif provider == "sagemaker":
             return create_sagemaker_chat(config, session_name)
+        elif provider == "claude-code":
+            return create_claude_code_agent(config, session_name)
         else:
             raise ValueError(f"Unsupported provider: {provider}")

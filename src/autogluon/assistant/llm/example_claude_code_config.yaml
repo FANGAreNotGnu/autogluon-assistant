@@ -1,0 +1,18 @@
+# Claude Code Agent Configuration Example
+# Uses Claude Sonnet 4.5 via AWS Bedrock with full agentic capabilities
+
+claude_code:
+  provider: claude-code
+  backend: bedrock
+  model: us.anthropic.claude-sonnet-4-5-20250929-v1:0  # Claude Sonnet 4.5
+  max_tokens: 8192
+  temperature: 0.7
+  verbose: false
+
+# Usage:
+# from omegaconf import OmegaConf
+# from autogluon.assistant.llm import ChatLLMFactory
+#
+# config = OmegaConf.load("example_claude_code_config.yaml")
+# agent = ChatLLMFactory.get_chat_model(config.claude_code, session_name="my_session")
+# response = agent.assistant_chat("Search for latest AI news and summarize")

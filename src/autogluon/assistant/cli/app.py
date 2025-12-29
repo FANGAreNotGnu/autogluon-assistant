@@ -43,7 +43,7 @@ def main(
     llm_provider: str = typer.Option(
         "bedrock",
         "--provider",
-        help="LLM provider to use (bedrock, openai, anthropic, sagemaker). Overrides config file.",
+        help="LLM provider to use (bedrock, openai, anthropic, sagemaker, claude-code). Overrides config file.",
     ),
     max_iterations: int = typer.Option(
         5,
@@ -115,8 +115,10 @@ def main(
     # 3) Invoke the core run_agent function
     # Override config path if provider is specified and config path is default
     provider_config_path = config_path
-    if llm_provider in ["bedrock", "openai", "anthropic", "sagemaker"] and config_path == DEFAULT_CONFIG_PATH:
-        provider_config_path = Path(DEFAULT_CONFIG_PATH).parent / f"{llm_provider}.yaml"
+    if llm_provider in ["bedrock", "openai", "anthropic", "sagemaker", "claude-code"] and config_path == DEFAULT_CONFIG_PATH:
+        # Map claude-code to claude_code_bedrock.yaml
+        config_name = "claude_code_bedrock" if llm_provider == "claude-code" else llm_provider
+        provider_config_path = Path(DEFAULT_CONFIG_PATH).parent / f"{config_name}.yaml"
         if not provider_config_path.exists():
             provider_config_path = DEFAULT_CONFIG_PATH
 
@@ -159,7 +161,7 @@ def chat(
     llm_provider: str = typer.Option(
         "bedrock",
         "--provider",
-        help="LLM provider to use (bedrock, openai, anthropic, sagemaker). Overrides config file.",
+        help="LLM provider to use (bedrock, openai, anthropic, sagemaker, claude-code). Overrides config file.",
     ),
     session_id: str | None = typer.Option(
         None,
@@ -196,8 +198,10 @@ def chat(
         if chat_config_path.exists():
             provider_config_path = chat_config_path
 
-    if llm_provider in ["bedrock", "openai", "anthropic", "sagemaker"] and provider_config_path:
-        provider_specific = Path(provider_config_path).parent / f"{llm_provider}.yaml"
+    if llm_provider in ["bedrock", "openai", "anthropic", "sagemaker", "claude-code"] and provider_config_path:
+        # Map claude-code to claude_code_bedrock.yaml
+        config_name = "claude_code_bedrock" if llm_provider == "claude-code" else llm_provider
+        provider_specific = Path(provider_config_path).parent / f"{config_name}.yaml"
         if provider_specific.exists():
             provider_config_path = provider_specific
 
