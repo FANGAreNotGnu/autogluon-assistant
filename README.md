@@ -78,11 +78,13 @@ mlzero -i <input_data_folder>
 
 ## 🐳 Docker
 
-Build the Docker image from the **project root** (includes `mlzero` conda env for running MLZero and `maab` conda env for MAAB benchmarking):
+Build the Docker image from the **project root**.
 
 ```bash
 docker build --no-cache -t mlzero:latest .
 ```
+
+The image contains two conda environments: mlzero for running MLZero, and maab for MAAB benchmarking.
 
 > **Note:** Run this from the repository root directory, not the `maab/` folder, unless you specifically want to build for running `aws_batch_submit.sh` to benchmark MAAB with AWS Batch.
 
