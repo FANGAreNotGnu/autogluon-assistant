@@ -78,6 +78,8 @@ mlzero -i <input_data_folder>
 
 ## 🐳 Docker
 
+**Security Note**: MLZero executes LLM-generated code during operation. While this generally works fine for common machine learning tasks, running inside a Docker container is recommended for security reasons, as it provides an extra layer of isolation from your host system.
+
 Build the Docker image from the **project root**.
 
 ```bash
