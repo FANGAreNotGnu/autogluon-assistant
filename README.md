@@ -76,6 +76,31 @@ mlzero -i <input_data_folder>
 
 ---
 
+## 🐳 Docker
+
+Build the Docker image from the **project root**.
+
+```bash
+docker build --no-cache -t mlzero:latest .
+```
+
+The image contains two conda environments: `mlzero` for running MLZero, and `maab` for MAAB benchmarking.
+
+> **Note:** Run this from the repository root directory, not the `maab/` folder, unless you specifically want to build for running `maab/aws_batch_submit.sh` to benchmark MAAB with AWS Batch.
+
+> **Version Info:** Each build pulls the latest code from the GitHub `main` branch. To use a specific branch or tag, pass the `BRANCH` build argument:
+> ```bash
+> docker build --no-cache --build-arg BRANCH=<branch-or-tag> -t mlzero:latest .
+> ```
+
+Run the container:
+
+```bash
+docker run -it --gpus all --shm-size=512g mlzero:latest
+```
+
+---
+
 ## 🖥️ Interfaces
 
 AutoGluon Assistant provides multiple interfaces:
