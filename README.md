@@ -76,6 +76,20 @@ mlzero -i <input_data_folder>
 
 ---
 
+## 🐳 Docker
+
+Build the Docker image (includes `mlzero` conda env for running MLZero and `maab` conda env for MAAB benchmarking):
+
+`docker build --no-cache -t mlzero:latest .`
+
+*Note: Run this from the repository root directory, not the `maab/` folder, unless you specifically want to build for running `maab/aws_batch_submit.sh` on the MAAB benchmark with AWS Batch distribution.*
+
+Run the container:
+
+`docker run -it --gpus all --shm-size=512g mlzero:latest`
+
+---
+
 ## 🖥️ Interfaces
 
 AutoGluon Assistant provides multiple interfaces:
