@@ -78,15 +78,24 @@ mlzero -i <input_data_folder>
 
 ## 🐳 Docker
 
-Build the Docker image (includes `mlzero` conda env for running MLZero and `maab` conda env for MAAB benchmarking):
+Build the Docker image from the **project root** (includes `mlzero` conda env for running MLZero and `maab` conda env for MAAB benchmarking):
 
-`docker build --no-cache -t mlzero:latest .`
+```bash
+docker build --no-cache -t mlzero:latest .
+```
 
-*Note: Run this from the repository root directory, not the `maab/` folder, unless you specifically want to build for running `maab/aws_batch_submit.sh` on the MAAB benchmark with AWS Batch distribution.*
+> **Note:** Run this from the repository root directory, not the `maab/` folder—unless you specifically want to build for running `eval_batch.sh` on the MAAB benchmark.
+
+> **Version Info:** Each build pulls the latest code from the GitHub `main` branch. To use a specific branch or tag, pass the `BRANCH` build argument:
+> ```bash
+> docker build --no-cache --build-arg BRANCH=<branch-or-tag> -t mlzero:latest .
+> ```
 
 Run the container:
 
-`docker run -it --gpus all --shm-size=512g mlzero:latest`
+```bash
+docker run -it --gpus all --shm-size=512g mlzero:latest
+```
 
 ---
 
