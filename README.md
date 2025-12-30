@@ -84,9 +84,9 @@ Build the Docker image from the **project root**.
 docker build --no-cache -t mlzero:latest .
 ```
 
-The image contains two conda environments: mlzero for running MLZero, and maab for MAAB benchmarking.
+The image contains two conda environments: `mlzero` for running MLZero, and `maab` for MAAB benchmarking.
 
-> **Note:** Run this from the repository root directory, not the `maab/` folder, unless you specifically want to build for running `aws_batch_submit.sh` to benchmark MAAB with AWS Batch.
+> **Note:** Run this from the repository root directory, not the `maab/` folder, unless you specifically want to build for running `maab/aws_batch_submit.sh` to benchmark MAAB with AWS Batch.
 
 > **Version Info:** Each build pulls the latest code from the GitHub `main` branch. To use a specific branch or tag, pass the `BRANCH` build argument:
 > ```bash
