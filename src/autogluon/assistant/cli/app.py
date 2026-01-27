@@ -120,7 +120,8 @@ def main(
         config_name = "claude_code_bedrock" if llm_provider == "claude-code" else llm_provider
         provider_config_path = Path(DEFAULT_CONFIG_PATH).parent / f"{config_name}.yaml"
         if not provider_config_path.exists():
-            provider_config_path = DEFAULT_CONFIG_PATH
+            typer.echo(f"Error: Config file for provider '{llm_provider}' not found: {provider_config_path}", err=True)
+            raise typer.Exit(1)
 
     run_agent(
         input_data_folder=input_data_folder,
@@ -204,6 +205,10 @@ def chat(
         provider_specific = Path(provider_config_path).parent / f"{config_name}.yaml"
         if provider_specific.exists():
             provider_config_path = provider_specific
+        elif llm_provider != "bedrock":
+            # Raise error if provider config not found (except for bedrock which uses default)
+            typer.echo(f"Error: Config file for provider '{llm_provider}' not found: {provider_specific}", err=True)
+            raise typer.Exit(1)
 
     run_chat_agent(
         input_data_folder=input_data_folder,
