@@ -39,17 +39,27 @@ llm: &default_llm
   proxy_url: null
   temperature: 0.1
   top_p: 0.9
-  verbose: True
+  verbose: True  # Enable internal process logging (thinking blocks, tool calls, etc.)
   multi_turn: False
   template: null
-  add_coding_format_instruction: false
+  add_coding_format_instruction: true  # Enable Claude Code-specific format instructions
   apply_meta_prompting: False
+  # Extended thinking: NOT RECOMMENDED for MLZero
+  # Claude Code already does internal reasoning. Extended thinking adds cost/latency without clear benefit
+  # for structured code generation. Only enable for complex research problems. May not be supported by Agent SDK.
+  # See: CLAUDE_CODE_EXTENDED_THINKING.md
+  # thinking:
+  #   enabled: true
+  #   type: "enabled"  # or "extended" for longer thinking
+  #   budget_tokens: 10000
 
 python_coder:
   <<: *default_llm  # Merge llm_config
+  template: prompts/templates/claude_code_python_coder.txt
 
 bash_coder:
   <<: *default_llm  # Merge llm_config
+  template: prompts/templates/claude_code_bash_coder.txt
 
 executer:
   <<: *default_llm  # Merge llm_config

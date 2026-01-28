@@ -65,9 +65,14 @@ Notes:
 
         # Add format instruction if configured
         if self.llm_config.add_coding_format_instruction:
-            format_instruction = (
-                "Please format your response with the code in a ```bash``` code block to make it easily extractable."
-            )
+            provider = getattr(self.llm_config, "provider", None)
+            if provider == "claude-code":
+                format_instruction = (
+                    "OUTPUT FORMAT: Your final response must contain complete, executable bash code in a ```bash code block. "
+                    "Do not end with explanatory text or summaries - only the code block."
+                )
+            else:
+                format_instruction = "Please format your response with the code in a ```bash``` code block to make it easily extractable."
             prompt = f"{prompt}\n\n{format_instruction}"
 
         self.manager.save_and_log_states(

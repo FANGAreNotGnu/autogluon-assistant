@@ -59,6 +59,22 @@ class CoderAgent(BaseAgent):
 
         response = self.coder_llm.assistant_chat(prompt)
 
+        # Save Claude Code internal process if using claude-code provider
+        provider = getattr(self.coder_llm_config, "provider", None)
+        if provider == "claude-code" and hasattr(self.coder_llm, "save_internal_process_to_file"):
+            import os
+
+            states_dir = os.path.join(self.manager.iteration_folder, "states")
+
+            # Save main internal process log
+            internal_process_file = f"{self.language}_coder_internal_process.txt"
+            filepath = os.path.join(states_dir, internal_process_file)
+            self.coder_llm.save_internal_process_to_file(filepath, include_raw_dump=False)
+
+            # Save debug dump if in debug mode (verbosity >= 3)
+            if self.manager.verbosity >= 3 and hasattr(self.coder_llm, "save_debug_dump"):
+                self.coder_llm.save_debug_dump(states_dir)
+
         generated_code = self.coder_prompt.parse(response)
 
         self.manager.log_agent_end("CoderAgent: code-generation prompt handled and code parsed from response.")

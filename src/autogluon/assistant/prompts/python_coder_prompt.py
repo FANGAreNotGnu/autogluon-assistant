@@ -83,7 +83,16 @@ These errors were encountered across different implementation approaches and may
 
     def get_format_instruction(self) -> str:
         """Get the format instruction to append to the prompt."""
-        return "Please format your response with the code in a ```python``` code block to make it easily extractable."
+        # Check if using Claude Code provider
+        provider = getattr(self.llm_config, "provider", None)
+
+        if provider == "claude-code":
+            return """
+OUTPUT FORMAT: Your final response must contain complete, executable Python code in a ```python code block. Do not end with explanatory text or summaries - only the code block."""
+        else:
+            return (
+                "Please format your response with the code in a ```python``` code block to make it easily extractable."
+            )
 
     def _build(self, **kwargs) -> str:
         """Build a prompt for the LLM to generate Python code.

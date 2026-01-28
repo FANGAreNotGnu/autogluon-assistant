@@ -52,8 +52,19 @@ class BasePrompt(ABC):
     def _load_template(self, template_str_or_path):
         if isinstance(template_str_or_path, str) and template_str_or_path.endswith(".txt"):
             try:
-                logger.info(f"Loading template from file {template_str_or_path}")
-                with open(template_str_or_path, "r") as f:
+                # Try as-is first (absolute or relative to cwd)
+                from pathlib import Path
+
+                template_path = Path(template_str_or_path)
+
+                # If not absolute and doesn't exist, try relative to package root
+                if not template_path.is_absolute() and not template_path.exists():
+                    from ..constants import PACKAGE_ROOT
+
+                    template_path = PACKAGE_ROOT / template_str_or_path
+
+                logger.info(f"Loading template from file {template_path}")
+                with open(template_path, "r") as f:
                     self.template = f.read()
             except Exception as e:
                 logger.warning(f"Failed to load template from file {template_str_or_path}: {e}")
