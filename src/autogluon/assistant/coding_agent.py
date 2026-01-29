@@ -52,12 +52,12 @@ def run_agent(
 
     if output_folder is None or not output_folder:
         working_dir = os.path.join(current_file_dir.parent.parent.parent, "runs")
-        # Get current date in YYYYMMDD format
-        current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Generate a random UUID4
-        random_uuid = uuid.uuid4()
+        # Get current date in YYYYMMDD_HHMM format
+        current_datetime = datetime.now().strftime("%Y%m%d_%H%M")
+        # Generate a 4-digit random UUID
+        random_uuid = uuid.uuid4().hex[:4]
         # Create the folder name using the pattern
-        folder_name = f"mlzero-mcts-{current_datetime}-{random_uuid}"
+        folder_name = f"mlzero-mcts-{current_datetime}_{random_uuid}"
 
         # Create the full path for the new folder
         output_folder = os.path.join(working_dir, folder_name)
@@ -134,6 +134,7 @@ def run_agent(
             config=config,
             enable_per_iteration_instruction=enable_per_iteration_instruction,
             initial_user_input=initial_user_input,
+            verbosity=verbosity,
         )
 
     # Initialize the manager (generate initial prompts)

@@ -29,7 +29,11 @@ This prompt generates executable Python code for the specified task. Make sure t
 
     def default_template(self) -> str:
         return """
-As an AutoML Agent, you will be given a folder containing data and description files. Please generate Python code using {selected_tool} to train a predictor and make predictions on test data. Follow these specifications:
+As an AutoML Agent, you will be given a folder containing data and description files.
+
+{claude_code_examination_prompt}
+
+Please generate Python code using {selected_tool} to train a predictor and make predictions on test data. Follow these specifications:
 
 ONLY save files to the working directory: {per_iteration_output_folder}.
 
@@ -88,7 +92,7 @@ These errors were encountered across different implementation approaches and may
 
         if provider == "claude-code":
             return """
-OUTPUT FORMAT: Your final response must contain complete, executable Python code in a ```python code block. Do not end with explanatory text or summaries - only the code block."""
+OUTPUT FORMAT: Your response should include your analysis of the data and task requirements, followed by complete, executable Python code in a ```python code block. The code block should contain the full implementation ready to run."""
         else:
             return (
                 "Please format your response with the code in a ```python``` code block to make it easily extractable."
@@ -105,11 +109,13 @@ OUTPUT FORMAT: Your final response must contain complete, executable Python code
         # Generate best code prompt and validation prompt
         code_improvement_prompt = self._generate_code_improvement_prompt()
         validation_prompt = self._generate_validation_prompt()
+        claude_code_examination_prompt = self._generate_claude_code_examination_prompt()
 
         # Render the prompt using the variable provider with additional variables
         additional_vars = {
             "code_improvement_prompt": code_improvement_prompt,  # Dynamically generated
             "validation_prompt": validation_prompt,  # Dynamically generated
+            "claude_code_examination_prompt": claude_code_examination_prompt,  # Dynamically generated
         }
 
         prompt = self.render(additional_vars)
@@ -152,6 +158,18 @@ Available CPUs: {get_cpu_count()}
 Available GPUs: {get_gpu_count()}
 Please optimize your code to efficiently utilize the available hardware resources. 
 """
+
+    def _generate_claude_code_examination_prompt(self) -> str:
+        """Generate Claude Code specific file examination prompt."""
+        provider = getattr(self.llm_config, "provider", None)
+
+        if provider == "claude-code":
+            input_data_folder = self.manager.input_data_folder
+            return f"""
+IMPORTANT: Before writing code, use your tools to examine the actual data files in: {input_data_folder}
+"""
+        else:
+            return "IMPORTANT: Before writing any code, carefully examine the data structure, formats, and requirements provided below. Understanding the data characteristics is crucial for generating correct and effective code."
 
     def _generate_code_improvement_prompt(self) -> str:
         """Generate prompt section about best/successful previous code."""

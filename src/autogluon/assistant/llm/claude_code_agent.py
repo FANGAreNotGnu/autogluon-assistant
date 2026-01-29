@@ -325,9 +325,7 @@ class ClaudeCodeAgent(BaseAssistantChat):
         if internal_process["text_blocks"]:
             output.append(f"\n## Message Content ({len(internal_process['text_blocks'])} messages)\n")
             for i, text in enumerate(internal_process["text_blocks"], 1):
-                output.append(f"\n### Message {i}:\n{text[:1000]}\n")  # First 1000 chars
-                if len(text) > 1000:
-                    output.append(f"... ({len(text) - 1000} more characters)\n")
+                output.append(f"\n### Message {i}:\n{text}\n")  # Full message without truncation
 
         # Thinking blocks
         if internal_process["thinking"]:

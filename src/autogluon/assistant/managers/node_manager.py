@@ -230,6 +230,7 @@ class NodeManager:
         config: Any,
         initial_user_input: str,
         enable_per_iteration_instruction: bool,
+        verbosity: int = 1,
     ):
         """
         Initialize the NodeManager with required paths and configuration.
@@ -240,6 +241,7 @@ class NodeManager:
             config: Configuration object
             initial_user_input: Initial user instruction
             enable_per_iteration_instruction: If asking for per iteration user input
+            verbosity: Verbosity level for logging (0-4)
         """
         # Store required paths
         self.input_data_folder = input_data_folder
@@ -256,6 +258,7 @@ class NodeManager:
         self.config = config
         self.enable_per_iteration_instruction = enable_per_iteration_instruction
         self.initial_user_input = initial_user_input
+        self.verbosity = verbosity
 
         # Track time_step
         self.time_step = -1

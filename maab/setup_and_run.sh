@@ -37,11 +37,34 @@ ls /fsx/mlzero-dev
 #fi
 log "FSx mounted successfully at /fsx/mlzero-dev"
 
-# Setup logging to both console and file
-exec > >(tee -a "/fsx/mlzero-dev/autogluon-assistant/maab/container_log.txt")
+# Setup logging to both console and file (use FSx runs directory for logs)
+LOG_DIR="/fsx/mlzero-dev/runs/logs"
+mkdir -p "$LOG_DIR"
+exec > >(tee -a "$LOG_DIR/container_log_${RUN_TIMESTAMP}.txt")
 exec 2>&1
 
-RUN_DIR="/fsx/mlzero-dev/autogluon-assistant/maab/runs/RUN_${RUN_TIMESTAMP}"
+# Copy source code to local directory (exclude large folders for file watching compatibility)
+log "Copying source code to local directory"
+LOCAL_SRC_DIR="/opt/autogluon-assistant-src"
+mkdir -p "$LOCAL_SRC_DIR"
+
+rsync -av --progress \
+    --exclude='runs' \
+    --exclude='runs_backup' \
+    --exclude='maab/runs' \
+    --exclude='maab/datasets' \
+    --exclude='maab/runs_backup' \
+    --exclude='*.egg-info' \
+    --exclude='__pycache__' \
+    --exclude='.git' \
+    --exclude='.ruff_cache' \
+    --exclude='.pytest_cache' \
+    /fsx/mlzero-dev/autogluon-assistant/ "$LOCAL_SRC_DIR/"
+
+log "Source code copied to $LOCAL_SRC_DIR"
+
+# Setup runs directory in FSx (not under autogluon-assistant to avoid copying)
+RUN_DIR="/fsx/mlzero-dev/runs/RUN_${RUN_TIMESTAMP}"
 OUTPUT_DIR="${RUN_DIR}/outputs"
 mkdir -p "$OUTPUT_DIR"
 
@@ -54,7 +77,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-cd /fsx/mlzero-dev/autogluon-assistant
+cd "$LOCAL_SRC_DIR"
 log "Installing MLZero from $(pwd)"
 pip install uv
 uv pip install opencv-python-headless
@@ -69,7 +92,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-cd /fsx/mlzero-dev/autogluon-assistant/maab
+cd "$LOCAL_SRC_DIR/maab"
 log "Installing MAAB from $(pwd)"
 pip install uv
 uv pip install opencv-python-headless
@@ -77,11 +100,11 @@ uv pip install -r requirements.txt || log "WARNING: Error installing MAAB requir
 
 # Execute the agent-dataset evaluation using the AWS Batch specific script
 log "Starting evaluation"
-cd /fsx/mlzero-dev/autogluon-assistant/maab
+cd "$LOCAL_SRC_DIR/maab"
 
-# Use the dedicated AWS Batch evaluation script
+# Use the dedicated AWS Batch evaluation script (from local copy)
 log "Running eval_aws_batch.sh for ${AGENT_NAME} on ${DATASET_NAME}"
-bash "/fsx/mlzero-dev/autogluon-assistant/maab/eval_aws_batch.sh" \
+bash "$LOCAL_SRC_DIR/maab/eval_aws_batch.sh" \
     -a "$AGENT_NAME" \
     -d "$DATASET_NAME" \
     -t "$RUN_TIMESTAMP" \

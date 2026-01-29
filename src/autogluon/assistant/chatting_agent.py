@@ -47,9 +47,9 @@ def run_chat_agent(
     # Generate output folder if not provided
     if output_folder is None or not output_folder:
         working_dir = os.path.join(current_file_dir.parent.parent.parent, "chat_sessions")
-        current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-        random_uuid = uuid.uuid4()
-        folder_name = f"chat-{current_datetime}-{random_uuid}"
+        current_datetime = datetime.now().strftime("%Y%m%d_%H%M")
+        random_uuid = uuid.uuid4().hex[:4]
+        folder_name = f"chat-{current_datetime}_{random_uuid}"
         output_folder = os.path.join(working_dir, folder_name)
 
     # Create output directory

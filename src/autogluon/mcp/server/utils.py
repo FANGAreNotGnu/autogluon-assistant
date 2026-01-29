@@ -17,8 +17,8 @@ def generate_task_output_dir() -> str:
         str: Path to output directory
     """
     # Follow the specified pattern: mlzero-{datetime}-{uuid}
-    current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-    random_uuid = uuid.uuid4()
+    current_datetime = datetime.now().strftime("%Y%m%d_%H%M")
+    random_uuid = uuid.uuid4().hex[:4]
 
     # Use a dedicated directory for MCP outputs
     # This ensures consistency regardless of where the server is started
@@ -26,7 +26,7 @@ def generate_task_output_dir() -> str:
     base_dir.mkdir(parents=True, exist_ok=True)
 
     # Create output directory
-    folder_name = f"mlzero-{current_datetime}-{random_uuid}"
+    folder_name = f"mlzero-{current_datetime}_{random_uuid}"
     output_dir = base_dir / folder_name
     output_dir.mkdir(parents=True, exist_ok=True)
 

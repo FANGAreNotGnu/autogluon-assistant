@@ -68,8 +68,8 @@ Notes:
             provider = getattr(self.llm_config, "provider", None)
             if provider == "claude-code":
                 format_instruction = (
-                    "OUTPUT FORMAT: Your final response must contain complete, executable bash code in a ```bash code block. "
-                    "Do not end with explanatory text or summaries - only the code block."
+                    "OUTPUT FORMAT: Your response should include your reasoning about the environment setup and execution strategy, "
+                    "followed by complete, executable bash code in a ```bash code block. The code block should contain the full script ready to run."
                 )
             else:
                 format_instruction = "Please format your response with the code in a ```bash``` code block to make it easily extractable."
