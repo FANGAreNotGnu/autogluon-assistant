@@ -63,8 +63,8 @@ else
 fi
 
 # Create run directory
-mkdir -p "/fsx/mlzero-dev/autogluon-assistant/maab/runs/RUN_${RUN_TIMESTAMP}/outputs"
-RESULTS_FILE="/fsx/mlzero-dev/autogluon-assistant/maab/runs/RUN_${RUN_TIMESTAMP}/overall_results.csv"
+mkdir -p "/fsx/mlzero-dev/maab-batch-runs/RUN_${RUN_TIMESTAMP}/outputs"
+RESULTS_FILE="/fsx/mlzero-dev/maab-batch-runs/RUN_${RUN_TIMESTAMP}/overall_results.csv"
 
 # Create header for results file
 echo "agent,metric,value" > "$RESULTS_FILE"
@@ -86,7 +86,7 @@ for dataset in "${DATASET_LIST[@]}"; do
 done
 
 # Create job tracking file
-JOB_TRACKING_FILE="/fsx/mlzero-dev/autogluon-assistant/maab/runs/RUN_${RUN_TIMESTAMP}/job_tracking.csv"
+JOB_TRACKING_FILE="/fsx/mlzero-dev/maab-batch-runs/RUN_${RUN_TIMESTAMP}/job_tracking.csv"
 echo "job_id,agent,dataset,status,submission_time" > "$JOB_TRACKING_FILE"
 
 # Submit jobs
@@ -121,5 +121,5 @@ for agent in "${AGENT_LIST[@]}"; do
 done
 
 echo "All jobs submitted for run: RUN_${RUN_TIMESTAMP}"
-echo "Results will be available in: /fsx/mlzero-dev/autogluon-assistant/maab/runs/RUN_${RUN_TIMESTAMP}"
-echo "To monitor job status, run: /fsx/mlzero-dev/autogluon-assistant/maab/runs/RUN_${RUN_TIMESTAMP}/monitor_jobs.sh"
+echo "Results will be available in: /fsx/mlzero-dev/maab-batch-runs/RUN_${RUN_TIMESTAMP}"
+echo "To monitor job status, run: /fsx/mlzero-dev/maab-batch-runs/RUN_${RUN_TIMESTAMP}/monitor_jobs.sh"

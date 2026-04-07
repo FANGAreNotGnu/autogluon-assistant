@@ -8,7 +8,7 @@ exploration_constant: 1.414    # Controls exploration vs exploitation trade-off 
 max_debug_depth: 3         # Maximum depth of debug nodes in the search tree
 failure_offset: 2             # Number of failures to ignore before applying failure penalty
 failure_penalty_weight: 0.5   # Weight of the penalty for failed executions in UCT calculation
-initial_root_children: 3      # Maximum number of child nodes from root before considering fully expanded
+initial_root_children: 2      # Maximum number of child nodes from root before considering fully expanded
 max_debug_children: 2         # Maximum number of debug child nodes for a single parent node
 max_evolve_children: 2        # Maximum number of evolution child nodes for a single parent node
 
@@ -34,7 +34,7 @@ enable_meta_prompting: False
 llm: &default_llm
   provider: claude-code
   backend: bedrock  # Use AWS Bedrock as backend
-  model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  model: "us.anthropic.claude-opus-4-5-20251101-v1:0"
   max_tokens: 65535
   proxy_url: null
   temperature: 0.1

@@ -37,18 +37,36 @@ ls /fsx/mlzero-dev
 #fi
 log "FSx mounted successfully at /fsx/mlzero-dev"
 
-# Setup logging to both console and file (use FSx runs directory for logs)
-LOG_DIR="/fsx/mlzero-dev/runs/logs"
+# Create non-root user for running Claude Code (required for --dangerously-skip-permissions)
+if [ "$(id -u)" -eq 0 ]; then
+    log "Running as root, creating mlzero user for Claude Code execution"
+    useradd -m -s /bin/bash mlzero || true
+    # Give mlzero user access to conda environments
+    chown -R mlzero:mlzero /opt/conda 2>/dev/null || true
+fi
+
+# Setup logging to both console and file (use FSx maab-batch-runs directory for logs)
+LOG_DIR="/fsx/mlzero-dev/maab-batch-runs/logs"
 mkdir -p "$LOG_DIR"
-exec > >(tee -a "$LOG_DIR/container_log_${RUN_TIMESTAMP}.txt")
-exec 2>&1
+LOG_FILE="$LOG_DIR/container_log_${RUN_TIMESTAMP}.txt"
+
+# Override log function to write to both console and file
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# Install rsync if not available
+if ! command -v rsync &> /dev/null; then
+    log "Installing rsync"
+    apt-get update -qq && apt-get install -y -qq rsync
+fi
 
 # Copy source code to local directory (exclude large folders for file watching compatibility)
 log "Copying source code to local directory"
 LOCAL_SRC_DIR="/opt/autogluon-assistant-src"
 mkdir -p "$LOCAL_SRC_DIR"
 
-rsync -av --progress \
+rsync -a --info=progress2 \
     --exclude='runs' \
     --exclude='runs_backup' \
     --exclude='maab/runs' \
@@ -64,7 +82,7 @@ rsync -av --progress \
 log "Source code copied to $LOCAL_SRC_DIR"
 
 # Setup runs directory in FSx (not under autogluon-assistant to avoid copying)
-RUN_DIR="/fsx/mlzero-dev/runs/RUN_${RUN_TIMESTAMP}"
+RUN_DIR="/fsx/mlzero-dev/maab-batch-runs/RUN_${RUN_TIMESTAMP}"
 OUTPUT_DIR="${RUN_DIR}/outputs"
 mkdir -p "$OUTPUT_DIR"
 
@@ -102,12 +120,41 @@ uv pip install -r requirements.txt || log "WARNING: Error installing MAAB requir
 log "Starting evaluation"
 cd "$LOCAL_SRC_DIR/maab"
 
-# Use the dedicated AWS Batch evaluation script (from local copy)
-log "Running eval_aws_batch.sh for ${AGENT_NAME} on ${DATASET_NAME}"
-bash "$LOCAL_SRC_DIR/maab/eval_aws_batch.sh" \
-    -a "$AGENT_NAME" \
-    -d "$DATASET_NAME" \
-    -t "$RUN_TIMESTAMP" \
-    2>&1 | tee -a "${OUTPUT_DIR}/${AGENT_NAME}_${DATASET_NAME}_output/container_log.txt"
+# Set up permissions for mlzero user if running as root
+if [ "$(id -u)" -eq 0 ]; then
+    log "Setting up permissions for mlzero user"
+    # Give mlzero user access to source and output directories
+    chown -R mlzero:mlzero "$LOCAL_SRC_DIR"
+    chown -R mlzero:mlzero "$RUN_DIR"
+    mkdir -p "${OUTPUT_DIR}/${AGENT_NAME}_${DATASET_NAME}_output"
+    chown -R mlzero:mlzero "${OUTPUT_DIR}"
+
+    # Give mlzero user read access to only the specific agent and dataset being used
+    log "Setting read permissions for agent: ${AGENT_NAME} and dataset: ${DATASET_NAME}"
+    chmod -R a+rX "/fsx/mlzero-dev/autogluon-assistant/maab/agents/${AGENT_NAME}" 2>/dev/null || log "WARNING: Could not set permissions on agent directory"
+    chmod -R a+rX "/fsx/mlzero-dev/autogluon-assistant/maab/datasets/${DATASET_NAME}" 2>/dev/null || log "WARNING: Could not set permissions on dataset directory"
+    # Also ensure tools directory is readable
+    chmod -R a+rX /fsx/mlzero-dev/autogluon-assistant/maab/tools 2>/dev/null || true
+
+    # Run as mlzero user
+    log "Running eval_aws_batch.sh as mlzero user for ${AGENT_NAME} on ${DATASET_NAME}"
+    su - mlzero -c "
+        source /opt/conda/etc/profile.d/conda.sh && \
+        conda activate maab && \
+        cd '$LOCAL_SRC_DIR/maab' && \
+        bash '$LOCAL_SRC_DIR/maab/eval_aws_batch.sh' \
+            -a '$AGENT_NAME' \
+            -d '$DATASET_NAME' \
+            -t '$RUN_TIMESTAMP'
+    " 2>&1 | tee -a "${OUTPUT_DIR}/${AGENT_NAME}_${DATASET_NAME}_output/container_log.txt"
+else
+    # Not root, run directly
+    log "Running eval_aws_batch.sh for ${AGENT_NAME} on ${DATASET_NAME}"
+    bash "$LOCAL_SRC_DIR/maab/eval_aws_batch.sh" \
+        -a "$AGENT_NAME" \
+        -d "$DATASET_NAME" \
+        -t "$RUN_TIMESTAMP" \
+        2>&1 | tee -a "${OUTPUT_DIR}/${AGENT_NAME}_${DATASET_NAME}_output/container_log.txt"
+fi
 
 log "Container execution complete"

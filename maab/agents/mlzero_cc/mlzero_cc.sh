@@ -11,7 +11,7 @@ usage() {
 }
 
 # Default values
-CONDA_ENV="mlzerocc"
+CONDA_ENV="mlzero"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -57,12 +57,12 @@ fi
 mlzero \
     -i "$TRAINING_PATH" \
     -o "$OUTPUT_DIR" \
-    -n 8 \
+    -n 16 \
     -v 1 \
     --provider claude-code \
     --continuous_improvement \
-    --initial-instruction "complete the task in 2 hours" #\
-    #--remove-iteration-folders
+    --initial-instruction "complete the task in 2 hours" \
+    --remove-iteration-folders
 
 # Check if the process was successful
 if [ $? -ne 0 ]; then
