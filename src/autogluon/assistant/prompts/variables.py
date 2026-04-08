@@ -104,6 +104,21 @@ class VariableRegistry:
             )
         )
 
+        # Instruction-related variables (checkpoint-resume)
+        self.register(
+            VariableDefinition(
+                name="global_instructions",
+                description="Global instructions applied to all nodes",
+            )
+        )
+
+        self.register(
+            VariableDefinition(
+                name="local_instructions",
+                description="Local instructions applied to this subtree only",
+            )
+        )
+
         # Code-related variables
         self.register(VariableDefinition(name="python_code", description="Python code of current iteration"))
 

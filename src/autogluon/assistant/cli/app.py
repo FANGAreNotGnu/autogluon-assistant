@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import multiprocessing.resource_tracker
 from pathlib import Path
+from typing import List, Optional
 
 import typer
 
@@ -81,6 +82,32 @@ def main(
         "--extract-to",
         help="Copy input data to specified directory and automatically extract all .zip archives. ",
     ),
+    # === Checkpoint-resume parameters ===
+    checkpoint_after: str = typer.Option(
+        "none",
+        "--checkpoint-after",
+        help="Save checkpoint and exit after: 'init' (after initialization), 'step' (after each MCTS step), or 'none' (default, no checkpointing).",
+    ),
+    resume: Path | None = typer.Option(
+        None,
+        "--resume",
+        help="Resume from a checkpoint file (path to checkpoint.json).",
+    ),
+    restart_last_step: bool = typer.Option(
+        False,
+        "--restart-last-step",
+        help="When resuming, discard the last MCTS step and re-run it.",
+    ),
+    global_instruction: Optional[List[str]] = typer.Option(
+        None,
+        "--global-instruction",
+        help="Instruction applied to all future nodes (can be repeated).",
+    ),
+    local_instruction: str | None = typer.Option(
+        None,
+        "--local-instruction",
+        help="Instruction applied only to the next node's subtree.",
+    ),
     # === Logging parameters ===
     verbosity: int = typer.Option(
         1,
@@ -106,13 +133,22 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
 
-    # Check if input_data_folder is required for coding agent
-    if input_data_folder is None:
-        typer.echo("Error: Missing option '-i' / '--input' for coding agent.", err=True)
-        typer.echo("Use 'mlzero -i /path/to/data' for coding agent, or 'mlzero chat' for chatting agent.", err=True)
+    # Check input requirements: need either -i or --resume
+    if input_data_folder is None and resume is None:
+        typer.echo("Error: Missing option '-i' / '--input' or '--resume' for coding agent.", err=True)
+        typer.echo(
+            "Use 'mlzero -i /path/to/data' for fresh run, "
+            "'mlzero --resume checkpoint.json' to resume, "
+            "or 'mlzero chat' for chatting agent.",
+            err=True,
+        )
         raise typer.Exit(1)
 
-    # 3) Invoke the core run_agent function
+    # Validate checkpoint_after value
+    if checkpoint_after not in ("none", "init", "step"):
+        typer.echo(f"Error: --checkpoint-after must be 'none', 'init', or 'step', got '{checkpoint_after}'", err=True)
+        raise typer.Exit(1)
+
     # Override config path if provider is specified and config path is default
     provider_config_path = config_path
     if llm_provider in ["bedrock", "openai", "anthropic", "sagemaker"] and config_path == DEFAULT_CONFIG_PATH:
@@ -132,6 +168,11 @@ def main(
         initial_user_input=initial_user_input,
         extract_archives_to=extract_archives_to,
         verbosity=verbosity,
+        checkpoint_after=checkpoint_after,
+        resume_path=str(resume) if resume else None,
+        restart_last_step=restart_last_step,
+        global_instructions=global_instruction,
+        local_instruction=local_instruction,
     )
 
 

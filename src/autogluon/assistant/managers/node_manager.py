@@ -75,6 +75,9 @@ class Node:
     # Evaluation metrics
     validation_score: Optional[float] = None
 
+    # Instructions (for checkpoint-resume orchestration)
+    local_instructions: List[str] = field(default_factory=list)
+
     # Locking for thread safety
     _lock: threading.Lock = field(default_factory=threading.Lock)
     expected_child_count: int = 0
@@ -219,6 +222,57 @@ class Node:
 
         return self.exploitation + self.exploration
 
+    def to_dict(self) -> dict:
+        """Serialize this node and its entire subtree to a dict."""
+        return {
+            "time_step": self.time_step,
+            "depth": self.depth,
+            "stage": self.stage,
+            "visits": self.visits,
+            "validated_visits": self.validated_visits,
+            "failure_visits": self.failure_visits,
+            "unvalidated_visits": self.unvalidated_visits,
+            "validated_reward": self.validated_reward,
+            "is_successful": self.is_successful,
+            "is_debug_successful": self.is_debug_successful,
+            "is_terminal": self.is_terminal,
+            "debug_attempts": self.debug_attempts,
+            "python_code": self.python_code,
+            "bash_script": self.bash_script,
+            "tool_used": self.tool_used,
+            "tools_available": self.tools_available,
+            "tutorial_retrieval": self.tutorial_retrieval,
+            "tutorial_prompt": self.tutorial_prompt,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "execution_time": self.execution_time,
+            "error_message": self.error_message,
+            "error_analysis": self.error_analysis,
+            "validation_score": self.validation_score,
+            "local_instructions": self.local_instructions,
+            "expected_child_count": self.expected_child_count,
+            "children": [child.to_dict() for child in sorted(self.children, key=lambda c: c.time_step)],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict, parent: Optional["Node"] = None) -> "Node":
+        """Reconstruct a node and its subtree from a dict.
+
+        Args:
+            data: Serialized node dict (from to_dict)
+            parent: Parent node (None for root)
+
+        Returns:
+            Reconstructed Node with children
+        """
+        children_data = data.pop("children", [])
+        # Create node without triggering __post_init__ parent linkage yet
+        node = cls(parent=parent, **data)
+        # Recursively restore children (they link to this node via __post_init__)
+        for child_data in children_data:
+            cls.from_dict(child_data, parent=node)
+        return node
+
     def __eq__(self, other):
         if not isinstance(other, Node):
             return False
@@ -307,6 +361,10 @@ class NodeManager:
 
         # Tool tracking
         self.used_tools = set()
+
+        # Checkpoint-resume: instructions
+        self.global_instructions: List[str] = []
+        self.pending_local_instruction: Optional[str] = None
 
         # Target prompt instance for meta-prompting
         self.target_prompt_instance = None
@@ -711,6 +769,12 @@ class NodeManager:
         # Increment global time step for this new node
         self.time_step += 1
 
+        # Inherit local instructions from parent + apply any pending instruction
+        inherited_instructions = list(self.current_node.local_instructions)
+        if self.pending_local_instruction:
+            inherited_instructions.append(self.pending_local_instruction)
+            self.pending_local_instruction = None
+
         # Create a new node
         self.current_node = Node(
             parent=self.current_node,
@@ -720,6 +784,7 @@ class NodeManager:
             tools_available=self.available_tools,
             time_step=self.time_step,
             debug_attempts=self.current_node.debug_attempts + 1,
+            local_instructions=inherited_instructions,
         )
 
         # Check if we've exceeded the maximum debug attempts for this node
@@ -757,12 +822,19 @@ class NodeManager:
             parent = self.current_node
             tool_used = self.current_node.tool_used
 
+        # Inherit local instructions from parent + apply any pending instruction
+        inherited_instructions = list(parent.local_instructions) if parent != self.root_node else []
+        if self.pending_local_instruction:
+            inherited_instructions.append(self.pending_local_instruction)
+            self.pending_local_instruction = None
+
         self.current_node = Node(
             parent=parent,
             stage="evolve",
             tool_used=tool_used,
             tools_available=self.available_tools,
             time_step=self.time_step,
+            local_instructions=inherited_instructions,
         )
 
         # Generate code for the node
@@ -855,14 +927,11 @@ class NodeManager:
     def _get_user_input_for_step(self):
         """Get user input for the current step.
 
-        - For the first code generation (time_step == 0), always use initial_user_input
-        - For subsequent iterations, only prompt for additional input if enable_per_iteration_instruction is True
+        Combines: initial_user_input + per-iteration input + global_instructions + local_instructions.
         """
         if self.time_step == 0:
-            # First iteration: always use the initial user input from CLI
             user_input = self.initial_user_input or ""
         else:
-            # Subsequent iterations: only prompt if per-iteration instruction is enabled
             if self.enable_per_iteration_instruction:
                 logger.info(f"Previous iteration info is stored in: {self.get_iteration_folder(self.current_node)}")
                 user_input = self.initial_user_input or ""
@@ -870,10 +939,31 @@ class NodeManager:
                     f"Enter your inputs for current node (step {self.time_step}) (press Enter to skip): "
                 )
             else:
-                # Reuse the initial user input for all iterations
                 user_input = self.initial_user_input or ""
 
+        # Append global instructions
+        if self.global_instructions:
+            user_input += "\n\n### Global Instructions\n" + "\n".join(self.global_instructions)
+
+        # Append local instructions from current node's ancestor chain
+        local = self._collect_local_instructions()
+        if local:
+            user_input += "\n\n### Local Instructions (for this subtree)\n" + "\n".join(local)
+
         self.user_inputs.append(user_input)
+
+    def _collect_local_instructions(self) -> List[str]:
+        """Collect local instructions from the current node and its ancestors."""
+        instructions = []
+        seen = set()
+        node = self.current_node
+        while node is not None:
+            for instr in node.local_instructions:
+                if instr not in seen:
+                    instructions.append(instr)
+                    seen.add(instr)
+            node = node.parent
+        return instructions
 
     def simulate(self) -> tuple:
         """
@@ -1293,6 +1383,238 @@ class NodeManager:
         if hasattr(self, "retriever"):
             self.retriever.cleanup()
 
+    # ==================== Checkpoint-Resume ====================
+
+    def save_checkpoint(self, phase: str) -> str:
+        """Save full manager state to a JSON checkpoint file.
+
+        Args:
+            phase: The phase at which we're checkpointing ("init" or "step")
+
+        Returns:
+            Path to the saved checkpoint file
+        """
+        import json
+        from datetime import datetime
+
+        from omegaconf import OmegaConf
+
+        last_step_result = None
+        if phase == "step" and self.current_node and self.current_node != self.root_node:
+            last_step_result = {
+                "node_id": self.current_node.id,
+                "success": self.current_node.is_successful,
+                "validation_score": self.current_node.validation_score,
+                "tool_used": self.current_node.tool_used,
+                "stage": self.current_node.stage,
+                "error_message": self.current_node.error_message[:2000] if self.current_node.error_message else "",
+            }
+
+        checkpoint = {
+            "version": "1.0",
+            "phase": phase,
+            "step_number": self.time_step,
+            "timestamp": datetime.now().isoformat(),
+            "input_data_folder": self.input_data_folder,
+            "output_folder": self.output_folder,
+            "config": OmegaConf.to_container(self.config, resolve=True),
+            "manager_state": {
+                "data_prompt": self.data_prompt,
+                "description_files": getattr(self, "description_files", ""),
+                "task_description": getattr(self, "task_description", ""),
+                "available_tools": getattr(self, "available_tools", []),
+                "used_tools": list(self.used_tools),
+                "time_step": self.time_step,
+                "best_validation_score": self._best_validation_score,
+                "worst_validation_score": self._worst_validation_score,
+                "best_node_id": self._best_node.id if self._best_node else None,
+                "last_successful_node_id": self.last_successful_node.id if self.last_successful_node else None,
+                "best_step": self.best_step,
+                "last_successful_step": self.last_successful_step,
+                "global_instructions": self.global_instructions,
+                "all_error_analyses": self._all_error_analyses,
+                "user_inputs": self.user_inputs,
+                "initial_user_input": self.initial_user_input or "",
+                "enable_per_iteration_instruction": self.enable_per_iteration_instruction,
+            },
+            "tree": self.root_node.to_dict(),
+            "last_step_result": last_step_result,
+        }
+
+        checkpoint_path = os.path.join(self.output_folder, "checkpoint.json")
+        with open(checkpoint_path, "w") as f:
+            json.dump(checkpoint, f, indent=2, default=str)
+
+        logger.brief(f"Checkpoint saved: {checkpoint_path} (phase={phase}, step={self.time_step})")
+        return checkpoint_path
+
+    @classmethod
+    def load_checkpoint(cls, path: str, config=None) -> "NodeManager":
+        """Restore a NodeManager from a checkpoint file.
+
+        Args:
+            path: Path to checkpoint JSON file
+            config: Optional config override. If None, uses config from checkpoint.
+
+        Returns:
+            Restored NodeManager instance
+        """
+        import json
+
+        from omegaconf import OmegaConf
+
+        with open(path, "r") as f:
+            checkpoint = json.load(f)
+
+        state = checkpoint["manager_state"]
+
+        # Use provided config or restore from checkpoint
+        if config is None:
+            config = OmegaConf.create(checkpoint["config"])
+
+        # Create instance without calling __init__
+        manager = cls.__new__(cls)
+
+        # Restore paths
+        manager.input_data_folder = checkpoint["input_data_folder"]
+        manager.output_folder = checkpoint["output_folder"]
+        manager.config = config
+
+        # Restore scalars
+        manager.enable_per_iteration_instruction = state.get("enable_per_iteration_instruction", False)
+        manager.initial_user_input = state.get("initial_user_input", "")
+        manager.time_step = state["time_step"]
+        manager._best_validation_score = state["best_validation_score"]
+        manager._worst_validation_score = state["worst_validation_score"]
+        manager.best_step = state["best_step"]
+        manager.last_successful_step = state["last_successful_step"]
+
+        # Restore collections
+        manager.data_prompt = state["data_prompt"]
+        manager.description_files = state.get("description_files", "")
+        manager.task_description = state.get("task_description", "")
+        manager.available_tools = state.get("available_tools", [])
+        manager.used_tools = set(state.get("used_tools", []))
+        manager.global_instructions = state.get("global_instructions", [])
+        manager.pending_local_instruction = None
+        manager._all_error_analyses = state.get("all_error_analyses", [])
+        manager.user_inputs = state.get("user_inputs", [])
+
+        # MCTS parameters
+        manager.exploration_constant = config.exploration_constant
+        manager.max_debug_depth = config.max_debug_depth
+        manager.failure_offset = config.failure_offset
+        manager.failure_penalty_weight = config.failure_penalty_weight
+
+        # Threading
+        manager._node_lock = threading.Lock()
+        manager.search_start_time = time.time()
+        manager.target_prompt_instance = None
+
+        # Rebuild tree
+        manager.root_node = Node.from_dict(checkpoint["tree"])
+        manager.current_node = manager.root_node
+
+        # Re-derive best_node and last_successful_node by scanning the tree
+        all_nodes = manager._get_all_nodes()
+        best_node_id = state.get("best_node_id")
+        last_successful_id = state.get("last_successful_node_id")
+        manager._best_node = None
+        manager.last_successful_node = None
+
+        for node in all_nodes:
+            if best_node_id is not None and node.id == best_node_id:
+                manager._best_node = node
+            if last_successful_id is not None and node.id == last_successful_id:
+                manager.last_successful_node = node
+            # Also set current_node to the latest node
+            if node.time_step == manager.time_step:
+                manager.current_node = node
+
+        # Create output folder if needed
+        Path(manager.output_folder).mkdir(parents=True, exist_ok=True)
+
+        # Initialize agents (stateless — recreated fresh)
+        manager._init_agents()
+
+        logger.brief(f"Checkpoint loaded: {path} (phase={checkpoint['phase']}, step={manager.time_step})")
+        return manager
+
+    def rollback_last_step(self):
+        """Discard the last MCTS step (most recent node) and re-derive state.
+
+        Removes the node with the highest time_step from the tree,
+        cleans up its disk folder, and re-derives best/worst scores.
+        """
+        import shutil
+
+        # Find the node with the highest time_step
+        all_nodes = self._get_all_nodes()
+        non_root = [n for n in all_nodes if n.id is not None and n.id >= 0]
+        if not non_root:
+            logger.warning("No nodes to rollback.")
+            return
+
+        last_node = max(non_root, key=lambda n: n.time_step)
+        logger.brief(f"Rolling back node {last_node.id} (stage={last_node.stage}, tool={last_node.tool_used})")
+
+        # Remove from parent
+        if last_node.parent:
+            last_node.parent.remove_child(last_node)
+
+        # Decrement time_step
+        self.time_step = max(n.time_step for n in all_nodes if n != last_node)
+
+        # Remove disk folder
+        node_folder = os.path.join(self.output_folder, f"node_{last_node.id}")
+        if os.path.exists(node_folder):
+            shutil.rmtree(node_folder)
+            logger.info(f"Removed folder: {node_folder}")
+
+        # Re-derive best/worst scores
+        remaining = [n for n in all_nodes if n != last_node]
+        scored = [n for n in remaining if n.validation_score is not None]
+        if scored:
+            best = max(scored, key=lambda n: n.validation_score)
+            self._best_node = best
+            self._best_validation_score = best.validation_score
+            self.best_step = best.time_step
+            self._worst_validation_score = min(n.validation_score for n in scored)
+        else:
+            self._best_node = None
+            self._best_validation_score = None
+            self._worst_validation_score = None
+            self.best_step = -1
+
+        # Re-derive last_successful_node
+        successful = [n for n in remaining if n.is_successful and n.id >= 0]
+        if successful:
+            self.last_successful_node = max(successful, key=lambda n: n.time_step)
+            self.last_successful_step = self.last_successful_node.time_step
+        else:
+            self.last_successful_node = None
+            self.last_successful_step = -1
+
+        # Pop last error analysis if last node had an error
+        if last_node.error_analysis and self._all_error_analyses:
+            self._all_error_analyses.pop()
+
+        # Pop last user_input
+        if self.user_inputs:
+            self.user_inputs.pop()
+
+        # Un-mark terminal ancestors if needed (rollback may open up expansion)
+        if last_node.parent and last_node.parent.is_terminal:
+            last_node.parent.is_terminal = False
+            self._check_ancestors_terminal(last_node.parent.parent)
+
+        # Remove tool from used_tools if no other node uses it
+        remaining_tools = {n.tool_used for n in remaining if n.tool_used}
+        self.used_tools = remaining_tools
+
+        self.current_node = self.root_node
+        logger.brief(f"Rollback complete. Tree now has {len(remaining) - 1} nodes (excluding root).")
+
     def _find_debug_origin(self, node: Node) -> Optional[Node]:
         """
         Find the original node that started this debugging chain.
@@ -1499,6 +1821,21 @@ class NodeManager:
     def previous_tutorial_prompt(self) -> str:
         """Get the tutorial prompt from the previous step."""
         return self.current_node.prev_tutorial_prompt
+
+    @property
+    def global_instructions_prompt(self) -> str:
+        """Get global instructions formatted for prompts."""
+        if not self.global_instructions:
+            return ""
+        return "\n".join(self.global_instructions)
+
+    @property
+    def local_instructions_prompt(self) -> str:
+        """Get local instructions for the current node's subtree."""
+        local = self._collect_local_instructions()
+        if not local:
+            return ""
+        return "\n".join(local)
 
     @property
     def common_env_file(self) -> str:

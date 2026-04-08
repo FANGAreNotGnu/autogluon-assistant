@@ -26,6 +26,7 @@ Each run creates a timestamped folder under `{{OUTPUT_ROOT}}`:
     test.csv  -> ../data/
     ...
   mlzero_output/            # MLZero MCTS output
+    checkpoint.json         # Saved state for checkpoint-resume
     node_0/                 # First iteration
     node_1/                 # Second iteration
     ...
@@ -83,7 +84,29 @@ mlzero -i <input_folder> -n 10
 
 # Provider selection
 mlzero -i <input_folder> --provider openai
+
+# Checkpoint-resume (interactive orchestration)
+mlzero -i <input_folder> -o <output_folder> --checkpoint-after init     # Pause after init
+mlzero --resume <output_folder>/checkpoint.json --checkpoint-after step  # Run one MCTS step, pause
+mlzero --resume <output_folder>/checkpoint.json --restart-last-step      # Redo last step
+mlzero --resume <output_folder>/checkpoint.json -n 5                     # Run remaining steps
+
+# Instructions (applied during checkpoint-resume)
+mlzero --resume checkpoint.json --global-instruction "Use stratified sampling"
+mlzero --resume checkpoint.json --local-instruction "Try XGBoost for this subtree"
 ```
+
+## Checkpoint-Resume Protocol
+
+MLZero supports step-by-step orchestration via checkpoints. Exit code **42** means
+a checkpoint was saved and the process is paused for review.
+
+1. `--checkpoint-after init` — pause after data perception + tool selection
+2. `--checkpoint-after step` — pause after each MCTS iteration
+3. `--resume <path>` — resume from a checkpoint.json file
+4. `--restart-last-step` — discard last node and re-run (combine with `--resume`)
+5. `--global-instruction` — instruction applied to ALL future nodes (repeatable)
+6. `--local-instruction` — instruction applied only to the next node's subtree
 
 ## Key Configuration Parameters
 

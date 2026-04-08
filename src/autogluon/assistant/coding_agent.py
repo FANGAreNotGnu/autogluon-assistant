@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import time
 import uuid
 from datetime import datetime
@@ -13,9 +14,12 @@ from .utils import extract_archives
 
 logger = logging.getLogger(__name__)
 
+# Exit code for checkpoint-resume protocol
+CHECKPOINT_EXIT_CODE = 42
+
 
 def run_agent(
-    input_data_folder,
+    input_data_folder=None,
     output_folder=None,
     config_path=None,
     max_iterations=10,  # Default higher for MCTS search
@@ -27,6 +31,12 @@ def run_agent(
     extract_archives_to=None,
     manager=None,
     verbosity=1,
+    # Checkpoint-resume parameters
+    checkpoint_after="none",
+    resume_path=None,
+    restart_last_step=False,
+    global_instructions=None,
+    local_instruction=None,
 ):
     """
     Run the AutoGluon Assistant with MCTS-based search strategy.
@@ -126,8 +136,28 @@ def run_agent(
     if remove_current_iteration_folder is not None:
         config.remove_current_iteration_folder = remove_current_iteration_folder
 
-    if manager is None:
-        # Create a new NodeManager instance
+    # ==================== Resume or Fresh Start ====================
+    if resume_path:
+        # Resume from checkpoint
+        logger.brief(f"Resuming from checkpoint: {resume_path}")
+        manager = NodeManager.load_checkpoint(resume_path, config)
+
+        # Override output folder if specified
+        if output_folder:
+            manager.output_folder = str(Path(output_folder).expanduser().resolve())
+
+        # Apply new instructions
+        if global_instructions:
+            manager.global_instructions.extend(global_instructions)
+            logger.brief(f"Added {len(global_instructions)} global instruction(s)")
+        if local_instruction:
+            manager.pending_local_instruction = local_instruction
+            logger.brief(f"Pending local instruction set for next node")
+        if restart_last_step:
+            manager.rollback_last_step()
+
+    elif manager is None:
+        # Fresh start: create a new NodeManager instance
         manager = NodeManager(
             input_data_folder=input_data_folder,
             output_folder=output_folder,
@@ -136,10 +166,16 @@ def run_agent(
             initial_user_input=initial_user_input,
         )
 
-    # Initialize the manager (generate initial prompts)
-    manager.initialize()
+        # Initialize the manager (generate initial prompts)
+        manager.initialize()
 
-    # Execute the MCTS search
+        # Checkpoint after init if requested
+        if checkpoint_after == "init":
+            manager.save_checkpoint(phase="init")
+            logger.brief("Checkpoint saved after initialization. Exiting for review.")
+            sys.exit(CHECKPOINT_EXIT_CODE)
+
+    # ==================== MCTS Search Loop ====================
     iteration = 0
     start_time = time.time()
 
@@ -149,6 +185,12 @@ def run_agent(
 
         # Perform one step of the Monte Carlo Tree Search
         success = manager.step()
+
+        # Checkpoint after step if requested
+        if checkpoint_after == "step":
+            manager.save_checkpoint(phase="step")
+            logger.brief("Checkpoint saved after step. Exiting for review.")
+            sys.exit(CHECKPOINT_EXIT_CODE)
 
         if success:
             # Create a best run copy when we find a successful solution
@@ -185,6 +227,9 @@ def run_agent(
     logger.brief(f"Best validation score: {manager.best_validation_score}")
     logger.brief(f"Tools used: {', '.join(manager.used_tools)}")
     logger.brief(f"Output saved in {output_dir}")
+
+    # Save final checkpoint for reference
+    manager.save_checkpoint(phase="done")
 
     # Cleanup resources
     manager.cleanup()

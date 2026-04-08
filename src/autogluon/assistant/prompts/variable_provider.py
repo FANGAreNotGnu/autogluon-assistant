@@ -75,6 +75,8 @@ class VariableProvider:
                 "previous_tutorial_prompt": lambda: self.manager.previous_tutorial_prompt,
                 "selected_tool": lambda: self.manager.selected_tool,
                 "tool_prompt": lambda: self.manager.tool_prompt,
+                "global_instructions": lambda: self.manager.global_instructions_prompt,
+                "local_instructions": lambda: self.manager.local_instructions_prompt,
                 # Add more mappings as needed
             }
 
