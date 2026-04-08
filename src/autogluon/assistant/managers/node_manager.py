@@ -152,18 +152,28 @@ class Node:
     def uct_value(
         self,
         exploration_constant: float = 1.414,
-        best_score: Optional[float] = None,
-        worst_score: Optional[float] = None,
         failure_offset: float = 0,
         failure_penalty_weight: float = 0.5,
+        score_min: float = 0.0,
+        score_max: float = 0.0,
+        score_temperature: float = 0.3,
     ) -> float:
         """
         Calculate the UCT (Upper Confidence Bound for Trees) value of the node.
 
+        Uses min-max exponential normalization for the exploitation term:
+        normalized = (avg_score - score_min) / (score_max - score_min)   # [0, 1]
+        shaped     = (exp(normalized / T) - 1) / (exp(1/T) - 1)         # [0, 1]
+
+        This is scale-invariant: the same temperature works regardless of absolute score range.
+
         Args:
             exploration_constant: The constant that controls exploration vs exploitation
-            best_score: The best validation score seen so far (for scaling)
-            worst_score: The worst validation score seen so far (for scaling)
+            failure_offset: Number of failures to forgive before penalizing
+            failure_penalty_weight: Weight of the failure penalty
+            score_min: Minimum avg score across all scored nodes
+            score_max: Maximum avg score across all scored nodes
+            score_temperature: Temperature for shaping (lower = sharper, favors high scores)
 
         Returns:
             The UCT value
@@ -182,23 +192,24 @@ class Node:
         self.normalized_failure_visit = max(0, self.failure_visits - failure_offset)
         self.failure_penalty = -failure_penalty_weight * self.normalized_failure_visit / self.visits
 
-        # Calculate the validated rewards part
-        if self.validated_visits > 0:
-            if best_score is not None and worst_score is not None and best_score > worst_score:
-                # Normalize the validated_reward using best and worst scores
-                # First get the average raw score
-                self.avg_raw_score = self.validated_reward / self.validated_visits
-                # Then normalize it between 0 and 1
-                self.normalized_score = (self.avg_raw_score - worst_score) / (best_score - worst_score)
-                self.validated_weight = self.validated_visits / self.visits
-                self.validated_contribution = self.validated_weight * self.normalized_score
-            else:
-                # If can't normalize
-                self.validated_contribution = 1.0
+        # Calculate the validated rewards part using min-max exponential normalization
+        if self.validated_visits > 0 and score_max > score_min:
+            self.avg_raw_score = self.validated_reward / self.validated_visits
+            # Min-max normalize to [0, 1], then apply exponential shaping
+            normalized = (self.avg_raw_score - score_min) / (score_max - score_min)
+            normalized = max(0.0, min(1.0, normalized))  # clamp for safety
+            T = score_temperature
+            exp_inv_T = math.exp(1.0 / T)
+            self.softmax_score = (math.exp(normalized / T) - 1.0) / (exp_inv_T - 1.0)
+            self.validated_weight = self.validated_visits / self.visits
+            self.validated_contribution = self.validated_weight * self.softmax_score
+        elif self.validated_visits > 0:
+            # All scores equal or only one scored node — treat as 1.0
+            self.avg_raw_score = self.validated_reward / self.validated_visits
+            self.softmax_score = 1.0
+            self.validated_contribution = self.validated_visits / self.visits
         else:
             self.validated_contribution = 0.0
-
-        # Unvalidated contribution (nodes that succeeded but have no score) use a score of 0. and thus can be ignored
 
         # Total exploitation is the weighted sum of all components
         self.exploitation = self.validated_contribution + self.failure_penalty
@@ -278,6 +289,11 @@ class NodeManager:
         self.max_debug_depth = self.config.max_debug_depth
         self.failure_offset = self.config.failure_offset
         self.failure_penalty_weight = self.config.failure_penalty_weight
+        self.score_temperature = getattr(self.config, "score_temperature", 0.3)
+
+        # Score range cache for UCT computation
+        self._cached_score_range = (0.0, 0.0)
+        self._cached_score_range_step = -1
 
         # Tracking for thread safety
         self._node_lock = threading.Lock()
@@ -499,99 +515,162 @@ class NodeManager:
 
     def select_node(self) -> Node:
         """
-        Select a node for expansion using UCT selection.
+        Select a node for expansion using UCT with prior-calibrated new child.
+
+        At each node, a potential "new child" competes with existing children.
+        The new child uses the parent's own validation score as its expected
+        quality (Q_prior) and fair-share visits to normalize exploration:
+
+          UCT(new)   = Q_prior + C * sqrt(ln(N_parent) / N_fair)
+          UCT(child) = Q(child) + C * sqrt(ln(N_parent) / N_child)
+
+        This is score-dependent: expansion happens when children underperform
+        the parent; deepening happens when children improve over the parent.
 
         Returns:
-            The selected node
+            The selected node for expansion
         """
+        # Ensure score range is cached for this step
+        if self._cached_score_range_step != self.time_step:
+            self._cached_score_range = self._compute_score_range()
+            self._cached_score_range_step = self.time_step
+
         node = self.root_node
 
-        # Traverse the tree until we find a node to expand
-        while node is not None and not node.is_leaf:
-            # If the node is not fully expanded, return it
-            if not self._is_fully_expanded(node):
+        while node is not None:
+            # Leaf nodes: always expand
+            if node.is_leaf:
                 return node
 
-            # Otherwise, select the best child according to UCT
-            node = self._uct_select(node)
+            # Check if we can still create new children at this node
+            can_expand = self._can_add_child(node)
 
-        return node
+            non_terminal_children = [child for child in node.children if not child.is_terminal]
 
-    def _is_fully_expanded(self, node: Node) -> bool:
+            if not non_terminal_children and not can_expand:
+                # All children terminal and no room for new ones
+                if node.is_terminal:
+                    return None
+                # Mark terminal and return None
+                self.mark_node_terminal(node)
+                return None
+
+            if not non_terminal_children:
+                # All existing children are terminal, but we can still expand
+                return node
+
+            if can_expand:
+                # Compute new child's UCT using parent's own score as prior
+                parent_visits = max(1, node.visits)
+                num_children = len(non_terminal_children)
+                n_fair = max(1, parent_visits / (num_children + 1))
+
+                # Parent's own validation score as Q_prior for new child
+                score_min, score_max = self._cached_score_range
+                q_prior = 0.0
+                if node.validation_score is not None and score_max > score_min:
+                    norm = (node.validation_score - score_min) / (score_max - score_min)
+                    norm = max(0.0, min(1.0, norm))
+                    T = self.score_temperature
+                    exp_inv_T = math.exp(1.0 / T)
+                    q_prior = (math.exp(norm / T) - 1.0) / (exp_inv_T - 1.0)
+
+                new_child_uct = q_prior + self.exploration_constant * math.sqrt(
+                    math.log(parent_visits) / n_fair
+                )
+
+                # Compute best existing child UCT (with tool-specific exploration at root)
+                best_child = max(
+                    non_terminal_children, key=lambda c: self._compute_child_uct(node, c)
+                )
+                best_child_uct = self._compute_child_uct(node, best_child)
+
+                logger.detail(
+                    f"Node {node.id}: new_child UCT={new_child_uct:.3f} (Q_prior={q_prior:.3f}) vs "
+                    f"best_child (Node {best_child.id}) UCT={best_child_uct:.3f}"
+                )
+
+                if new_child_uct > best_child_uct:
+                    # New child wins -> expand at this node
+                    return node
+                else:
+                    # Existing child wins -> descend
+                    node = best_child
+            else:
+                # Can't expand, must descend into best existing child
+                best_child = max(
+                    non_terminal_children, key=lambda c: self._compute_child_uct(node, c)
+                )
+                node = best_child
+
+        return None
+
+    def _can_add_child(self, node: Node) -> bool:
         """
-        Check if a node is fully expanded.
+        Check if a node can accept a new child (not at hard limit).
 
         Args:
             node: The node to check
 
         Returns:
-            True if the node is fully expanded, False otherwise
+            True if a new child can be added, False otherwise
         """
+        if node.is_terminal:
+            return False
+
         # Root node
         if node.stage == "root":
-            return node.num_children >= self.config.initial_root_children or self._get_unused_tool() is None
+            if self._get_unused_tool() is None:
+                return False
+            return node.num_children < self.config.initial_root_children
 
         # For debug nodes, stop expanding after getting a successful node
         if node.stage == "debug":
-            # TODO: better debugging workflow?
             if node.is_debug_successful:
-                return True
-            return node.num_children >= self.config.max_debug_children
+                return False
+            return node.num_children < self.config.max_debug_children
 
         # For evolve nodes
         if node.stage == "evolve":
-            return node.num_children >= self.config.max_evolve_children
+            return node.num_children < self.config.max_evolve_children
 
         return False
 
-    def _uct_select(self, node: Node) -> Node:
+    def _compute_child_uct(self, parent: Node, child: Node) -> float:
         """
-        Select the best child node according to UCT, excluding terminal nodes.
+        Compute UCT value for a child node, applying tool-specific exploration
+        constants when the parent is the root node.
 
         Args:
-            node: The parent node
+            parent: The parent node
+            child: The child node to compute UCT for
 
         Returns:
-            The selected child node
+            The UCT value
         """
-        non_terminal_children = [child for child in node.children if not child.is_terminal]
-        if not non_terminal_children:
-            # Fallback case - this shouldn't happen if backpropagation is working correctly
-            assert (
-                node.is_terminal
-            ), f"All children of node {node.id} are terminal but node itself is not marked terminal"
-            logger.info("All nodes are terminal. Run complete.")
-            return None
+        score_min, score_max = self._cached_score_range
 
-        # Pass the best and worst validation scores for proper scaling
-        # If current node is root, adjust exploration constant based on tool index
-        if node == self.root_node:
-            # Get each child's tool index in the available tools list
-            def get_child_uct(child):
-                # Tools earlier in the list get higher exploration constants
-                tool_index = self.available_tools.index(child.tool_used)
-                # Scale exploration constant - earlier tools get higher values
-                tool_specific_exploration = self.exploration_constant * max(0.25, 1.0 - 0.25 * tool_index)
-                # Use config for failure offset
-                uct_value = child.uct_value(
-                    tool_specific_exploration,
-                    self._best_validation_score,
-                    self._worst_validation_score,
-                    failure_offset=self.failure_offset,
-                    failure_penalty_weight=self.failure_penalty_weight,
-                )
-                logger.detail(f"UCT Value is {uct_value} for Node {child.id}")
-                return uct_value
-
-            return max(non_terminal_children, key=get_child_uct)
+        if parent == self.root_node:
+            # Tools earlier in the list get higher exploration constants
+            tool_index = self.available_tools.index(child.tool_used)
+            tool_specific_exploration = self.exploration_constant * max(0.25, 1.0 - 0.25 * tool_index)
+            return child.uct_value(
+                tool_specific_exploration,
+                failure_offset=self.failure_offset,
+                failure_penalty_weight=self.failure_penalty_weight,
+                score_min=score_min,
+                score_max=score_max,
+                score_temperature=self.score_temperature,
+            )
         else:
-            # For non-root nodes, use the standard exploration constant
-            def get_child_uct(child):
-                uct_value = self.compute_uct_value(child)
-                logger.detail(f"UCT Value is {uct_value} for Node {child.id}")
-                return uct_value
-
-        return max(non_terminal_children, key=get_child_uct)
+            return child.uct_value(
+                self.exploration_constant,
+                failure_offset=self.failure_offset,
+                failure_penalty_weight=self.failure_penalty_weight,
+                score_min=score_min,
+                score_max=score_max,
+                score_temperature=self.score_temperature,
+            )
 
     def expand(self) -> Node:
         """
@@ -977,7 +1056,7 @@ class NodeManager:
         if node is None:
             return
 
-        if self._is_fully_expanded(node) and all(child.is_terminal for child in node.children):
+        if not self._can_add_child(node) and all(child.is_terminal for child in node.children):
             node.is_terminal = True
             logger.info(f"Marking ancestor node {node.id} as terminal (all children terminal)")
 
@@ -1265,13 +1344,37 @@ class NodeManager:
 
         logger.info(f"Full token usage detail:\n{usage}")
 
+    def _compute_score_range(self) -> tuple:
+        """Compute the min and max average scores across all scored nodes.
+
+        Used for min-max exponential normalization in UCT:
+        - normalized = (score - min) / (max - min)   -> [0, 1]
+        - shaped = (exp(normalized/T) - 1) / (exp(1/T) - 1)  -> [0, 1]
+
+        Returns:
+            (min_score, max_score) tuple across all scored nodes,
+            or (0.0, 0.0) if no scored nodes exist.
+        """
+        all_nodes = self._get_all_nodes()
+        scored_nodes = [n for n in all_nodes if n.validated_visits > 0]
+        if not scored_nodes:
+            return (0.0, 0.0)
+        avg_scores = [n.validated_reward / n.validated_visits for n in scored_nodes]
+        return (min(avg_scores), max(avg_scores))
+
     def compute_uct_value(self, node):
+        # Cache score range per step to avoid recomputing for every node
+        if not hasattr(self, "_cached_score_range") or self._cached_score_range_step != self.time_step:
+            self._cached_score_range = self._compute_score_range()
+            self._cached_score_range_step = self.time_step
+        score_min, score_max = self._cached_score_range
         return node.uct_value(
             self.exploration_constant,
-            self._best_validation_score,
-            self._worst_validation_score,
             failure_offset=self.failure_offset,
             failure_penalty_weight=self.failure_penalty_weight,
+            score_min=score_min,
+            score_max=score_max,
+            score_temperature=self.score_temperature,
         )
 
     # Properties to maintain compatibility with Manager API
