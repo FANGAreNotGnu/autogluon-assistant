@@ -121,6 +121,45 @@ AutoGluon Assistant provides multiple interfaces:
 
 ![Demo](https://github.com/autogluon/autogluon-assistant/blob/main/docs/assets/mcp_demo.gif)
 
+### Claude Code Integration
+
+Use MLZero as a set of skills inside [Claude Code](https://claude.com/claude-code) for interactive, agent-driven ML automation.
+
+**Setup:**
+
+```bash
+# Create a Claude Code workspace with MLZero skills
+mlzero-cc <workspace_path> <output_path>
+```
+
+This copies the MLZero skill files to `<workspace_path>` and configures `<output_path>` as the root directory for storing run outputs.
+
+**Usage:**
+
+```bash
+cd <workspace_path>
+claude
+```
+
+Then use the built-in skills from the Claude Code prompt:
+
+| Skill | Description |
+|-------|-------------|
+| `/run-mlzero` | End-to-end orchestrator — from raw data to results report |
+| `/prepare-dataset` | Inspect, clean, and organize data for MLZero |
+| `/write-description` | Create the task description file (target, metric, format) |
+| `/launch-mlzero` | Start the MCTS search loop |
+| `/check-status` | Monitor a running or completed MLZero session |
+| `/gather-results` | Parse output, extract metrics, and generate a report |
+
+**Example:**
+
+```
+> /run-mlzero dataset=/path/to/data instruction="Regression on SalePrice. Metric: RMSE."
+```
+
+Claude Code will orchestrate the full pipeline: prepare the dataset, write the task description, launch MLZero's MCTS search, and compile a results report — all with human-in-the-loop oversight.
+
 ---
 
 ## 📝 Citation

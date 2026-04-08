@@ -55,6 +55,7 @@ aga          = "autogluon.assistant.cli.app:app"
 mlzero       = "autogluon.assistant.cli.app:app"
 mlzero-backend = "autogluon.assistant.webui.backend.app:main"
 mlzero-frontend = "autogluon.assistant.webui.runner:run_frontend"
+mlzero-cc       = "autogluon.assistant.cli.cc_setup:main"
 mlzero-mcp-server = "autogluon.mcp.server.runner:main"
 mlzero-mcp-client = "autogluon.mcp.client.server:main"
 
@@ -79,6 +80,9 @@ namespaces = true
 [tool.setuptools.package-data]
 "autogluon.assistant" = [
   "configs/*.yaml",
+  "cc_template/**/*",
+  "cc_template/.claude/**/*",
+  "cc_template/.claudeignore",
   "webui/static/*",
   "webui/style.css",
   "tools_registry/**/*",
