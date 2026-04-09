@@ -60,7 +60,11 @@ def run_agent(
     # Get the directory of the current file
     current_file_dir = Path(__file__).parent
 
-    if output_folder is None or not output_folder:
+    # Track whether the user explicitly provided an output folder
+    user_provided_output = output_folder is not None and bool(output_folder)
+
+    if not user_provided_output and not resume_path:
+        # Fresh start with no -o: generate a new output directory
         working_dir = os.path.join(current_file_dir.parent.parent.parent, "runs")
         # Get current date in YYYYMMDD format
         current_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -71,6 +75,19 @@ def run_agent(
 
         # Create the full path for the new folder
         output_folder = os.path.join(working_dir, folder_name)
+    elif not user_provided_output and resume_path:
+        # Resume with no -o: reuse the checkpoint's output folder
+        # Resolve relative to the checkpoint file's parent directory
+        import json
+
+        with open(resume_path, "r") as _f:
+            _ckpt = json.load(_f)
+        ckpt_output = _ckpt.get("output_folder", "")
+        if ckpt_output:
+            ckpt_dir = str(Path(resume_path).expanduser().resolve().parent)
+            output_folder = str(Path(os.path.join(ckpt_dir, ckpt_output)).resolve())
+        else:
+            output_folder = str(Path(resume_path).expanduser().resolve().parent)
 
     # Create output directory
     output_dir = Path(output_folder).expanduser().resolve()

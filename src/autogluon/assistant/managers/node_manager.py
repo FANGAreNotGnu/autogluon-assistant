@@ -1511,6 +1511,11 @@ class NodeManager:
         manager.search_start_time = time.time()
         manager.target_prompt_instance = None
 
+        # Score range cache (not serialized — recomputed on first select_node call)
+        manager._cached_score_range = (0.0, 0.0)
+        manager._cached_score_range_step = -1
+        manager.score_temperature = getattr(config, "score_temperature", 0.3)
+
         # Rebuild tree
         manager.root_node = Node.from_dict(checkpoint["tree"])
         manager.current_node = manager.root_node
